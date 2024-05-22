@@ -22,6 +22,8 @@ DIGIT_WIDTH, DIGIT_HEIGHT = 150, 200
 MARGIN = 20
 IP_INTERFACE = 'wlan0'
 HITOKOTO_API = 'https://v1.hitokoto.cn/'
+IMAGE_PATH = 'tkr.jpg'
+GOLD_PRICE_API = 'https://api.jinjia.com.cn/index.php?m=app&mi=0&cache=1'
 
 # 初始化Pygame
 pygame.init()
@@ -46,10 +48,11 @@ class FlipClock:
         self.hitokoto_font = pygame.freetype.Font(FONT_PATH, 30)
         self.usage_font = pygame.freetype.Font(TIMES_NEW_ROMAN_PATH, 30)
         self.label_font = pygame.freetype.Font(TIMES_NEW_ROMAN_PATH, 20)
+        self.gold_font = pygame.freetype.Font(FONT_PATH, 30)
 
         # 用于缓存渲染的文本
         self.rendered_text_cache = {}
-        pygame.display.set_caption('Flip Clock with Date, Day, Lunar Calendar, and IP')
+        pygame.display.set_caption('Flip Clock')
 
         # 隐藏鼠标指针
         pygame.mouse.set_visible(False)
@@ -66,6 +69,7 @@ class FlipClock:
         self.old_upload_speed = 0
         self.old_download_speed = 0
         self.old_cpu_temp = 0
+        self.old_gold_price = ""
 
         # 记录上次绘制内容的矩形区域
         self.rects = {
@@ -74,40 +78,44 @@ class FlipClock:
             "hitokoto": None,
             "time": None,
             "usage": None,
-            "network": None
+            "network": None,
+            "gold_price": None
         }
 
-    def draw_flip_clock(self, current_time, current_date, lunar_date, ip_address, hitokoto, cpu_usage, memory_usage, disk_usage, upload_speed, download_speed, cpu_temp):
+        # 加载静态图片
+        self.image = pygame.image.load(IMAGE_PATH)
+        self.image = pygame.transform.scale(self.image, (250, 230))
+        self.image_rect = self.image.get_rect()
+        # 绘制静态图片
+        self.draw_image()
+
+    def draw_flip_clock(self, current_time, current_date, lunar_date, ip_address, hitokoto, cpu_usage, memory_usage, disk_usage, upload_speed, download_speed, cpu_temp, gold_price):
         dirty_rects = []
 
         # 比较并更新公历日期和星期几
         if current_date != self.old_date:
-            if self.rects["date"]:
-                self.clear_rect(self.rects["date"])
+            if self.rects["date"]: self.clear_rect(self.rects["date"])
             self.rects["date"] = self.render_text(self.date_font, current_date, (self.width // 2, self.height // 4 - 150))
             dirty_rects.append(self.rects["date"])
             self.old_date = current_date
 
         # 比较并更新农历日期
         if lunar_date != self.old_lunar_date:
-            if self.rects["lunar_date"]:
-                self.clear_rect(self.rects["lunar_date"])
+            if self.rects["lunar_date"]: self.clear_rect(self.rects["lunar_date"])
             self.rects["lunar_date"] = self.render_text(self.lunar_font, lunar_date, (self.width // 2, self.height // 4 - 100))
             dirty_rects.append(self.rects["lunar_date"])
             self.old_lunar_date = lunar_date
 
         # 比较并更新一言
         if hitokoto != self.old_hitokoto:
-            if self.rects["hitokoto"]:
-                self.clear_rect(self.rects["hitokoto"])
+            if self.rects["hitokoto"]: self.clear_rect(self.rects["hitokoto"])
             self.rects["hitokoto"] = self.render_text(self.hitokoto_font, hitokoto, (self.width // 2, self.height // 4))
             dirty_rects.append(self.rects["hitokoto"])
             self.old_hitokoto = hitokoto
 
         # 比较并更新翻页时钟
-        if current_time != self.old_time:
-            if self.rects["time"]:
-                self.clear_rect(self.rects["time"])
+        if current_time and (current_time != self.old_time):
+            if self.rects["time"]: self.clear_rect(self.rects["time"])
             self.rects["time"] = self.render_flip_numbers(current_time)
             dirty_rects.append(self.rects["time"])
             self.old_time = current_time
@@ -117,8 +125,7 @@ class FlipClock:
             memory_usage != self.old_memory_usage or
             disk_usage != self.old_disk_usage or
             cpu_temp != self.old_cpu_temp):
-            if self.rects["usage"]:
-                self.clear_rect(self.rects["usage"])
+            if self.rects["usage"]: self.clear_rect(self.rects["usage"])
             self.rects["usage"] = self.draw_usage_circles(cpu_usage, memory_usage, disk_usage, cpu_temp)
             dirty_rects.append(self.rects["usage"])
             self.old_cpu_usage = cpu_usage
@@ -130,17 +137,27 @@ class FlipClock:
         if (ip_address != self.old_ip or
             upload_speed != self.old_upload_speed or
             download_speed != self.old_download_speed):
-            if self.rects["network"]:
-                self.clear_rect(self.rects["network"])
+            if self.rects["network"]: self.clear_rect(self.rects["network"])
             self.rects["network"] = self.draw_network_info(ip_address, upload_speed, download_speed, (self.width // 2, self.height - 50))
             dirty_rects.append(self.rects["network"])
             self.old_ip = ip_address
             self.old_upload_speed = upload_speed
             self.old_download_speed = download_speed
 
+        # 比较并更新金价
+        if gold_price != self.old_gold_price:
+            if self.rects["gold_price"]: self.clear_rect(self.rects["gold_price"])
+            self.rects["gold_price"] = self.render_text(self.gold_font, gold_price, (self.width // 8, self.height - 100))
+            dirty_rects.append(self.rects["gold_price"])
+            self.old_gold_price = gold_price
+
         return dirty_rects
 
     def clear_rect(self, rect):
+        rect.width += 10
+        rect.height += 10
+        rect.x -= 5
+        rect.y -= 5
         pygame.draw.rect(self.screen, BACKGROUND_COLOR, rect)
 
     def render_text(self, font, text, position):
@@ -250,19 +267,30 @@ class FlipClock:
         self.screen.blit(down_surface, (down_x, y - down_rect.height // 2))
         return pygame.Rect(ip_x, y - ip_rect.height // 2, total_width, max(ip_rect.height, up_rect.height, down_rect.height))
 
+    def draw_image(self):
+        # 绘制静态图片在右下角
+        self.image_rect.bottomright = (self.width - 10, self.height - 10)
+        self.screen.blit(self.image, self.image_rect)
+
 class Utils:
     @staticmethod
     def get_time_strings():
-        # 获取当前时间和日期
+        # 获取当前时间
         now = time.localtime()
         current_time = time.strftime('%H:%M:%S', now)
+        return current_time
+
+    @staticmethod
+    def get_date_strings():
+        # 获取当前日期和农历日期
+        now = time.localtime()
         current_date = time.strftime('%Y-%m-%d %A', now)
 
         # 转换为农历日期
         solar = Solar(now.tm_year, now.tm_mon, now.tm_mday)
         lunar = Converter.Solar2Lunar(solar)
         lunar_date = f"农历 {lunar.year}年{lunar.month}月{lunar.day}日"
-        return current_time, current_date, lunar_date
+        return current_date, lunar_date
 
     @staticmethod
     def get_ip_address(interface):
@@ -321,28 +349,79 @@ class Utils:
         except:
             return 0
 
+    @staticmethod
+    def get_gold_price():
+        # 获取实时金价
+        try:
+            response = requests.get(GOLD_PRICE_API)
+            if response.status_code == 200:
+                data = response.json()
+                gn = data['gn'][0]
+                price = gn['price']
+                changepercent = gn['changepercent']
+                return f"- 国内金价: {price}元/g ({changepercent})"
+            else:
+                return "<无法获取金价>"
+        except Exception as e:
+            return "<金价获取失败>"
+
 def fetch_data(data_queue):
     # 初始化一言
     hitokoto = Utils.get_hitokoto()
     data_queue.put(('hitokoto', hitokoto))
     hitokoto_timer = time.time()
+    
+    # 初始化日期和农历日期
+    current_date, lunar_date = Utils.get_date_strings()
+    data_queue.put(('date', current_date))
+    data_queue.put(('lunar_date', lunar_date))
+    date_timer = time.time()
+    
+    # 初始化IP
+    ip_address = Utils.get_ip_address(IP_INTERFACE)
+    data_queue.put(('ip', ip_address))
+    ip_timer = time.time()
+
+    # 初始化金价
+    gold_price = Utils.get_gold_price()
+    data_queue.put(('gold_price', gold_price))
+    gold_price_timer = time.time()
 
     while True:
-        # 每10秒更新一次一言
+        # 一言
         if time.time() - hitokoto_timer >= 10:
             hitokoto = Utils.get_hitokoto()
             data_queue.put(('hitokoto', hitokoto))
             hitokoto_timer = time.time()
 
-        # 获取IP地址
-        ip_address = Utils.get_ip_address(IP_INTERFACE)
-        data_queue.put(('ip', ip_address))
+        # 日期和农历日期
+        if time.time() - date_timer >= 60:
+            current_date, lunar_date = Utils.get_date_strings()
+            data_queue.put(('date', current_date))
+            data_queue.put(('lunar_date', lunar_date))
+            date_timer = time.time()
 
-        # 每1秒更新一次网络速度
+        # IP地址
+        if time.time() - ip_timer >= 5:
+            ip_address = Utils.get_ip_address(IP_INTERFACE)
+            data_queue.put(('ip', ip_address))
+            ip_timer = time.time()
+
+        # 金价
+        if time.time() - gold_price_timer >= 60:
+            gold_price = Utils.get_gold_price()
+            data_queue.put(('gold_price', gold_price))
+            gold_price_timer = time.time()
+
+        # 网络速度
         upload_speed, download_speed = Utils.get_network_speed(IP_INTERFACE)
         data_queue.put(('network_speed', (upload_speed, download_speed)))
 
-        # 获取CPU温度
+        # 系统使用率
+        cpu_usage, memory_usage, disk_usage = Utils.get_system_usage()
+        data_queue.put(('system_usage', (cpu_usage, memory_usage, disk_usage)))
+
+        # CPU温度
         cpu_temp = Utils.get_cpu_temp()
         data_queue.put(('cpu_temp', cpu_temp))
 
@@ -355,13 +434,21 @@ def main():
 
     # 创建数据队列和线程
     data_queue = queue.Queue()
-    data_thread = threading.Thread(target=fetch_data, args=(data_queue,))
-    data_thread.daemon = True
+    data_thread = threading.Thread(target=fetch_data, args=(data_queue,), daemon=True)
     data_thread.start()
 
-    # 初始化系统使用率
-    cpu_usage, memory_usage, disk_usage = Utils.get_system_usage()
-    system_usage_timer = time.time()
+    # 初始化变量
+    ip_address = " "
+    hitokoto = " "
+    upload_speed = 0.0
+    download_speed = 0.0
+    cpu_temp = 0.0
+    cpu_usage = 0.0
+    memory_usage = 0.0
+    disk_usage = 0.0
+    current_date = " "
+    lunar_date = " "
+    gold_price = " "
 
     while running:
         # 事件处理
@@ -369,33 +456,22 @@ def main():
             if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
                 running = False
 
-        # 获取当前时间、日期和IP地址
-        current_time, current_date, lunar_date = Utils.get_time_strings()
-
         # 更新数据队列中的数据
         while not data_queue.empty():
             key, value = data_queue.get()
-            if key == 'hitokoto':
-                hitokoto = value
-            elif key == 'ip':
-                ip_address = value
-            elif key == 'network_speed':
-                upload_speed, download_speed = value
-            elif key == 'cpu_temp':
-                cpu_temp = value
+            if key == 'hitokoto': hitokoto = value
+            elif key == 'ip': ip_address = value
+            elif key == 'network_speed': upload_speed, download_speed = value
+            elif key == 'cpu_temp': cpu_temp = value
+            elif key == 'system_usage': cpu_usage, memory_usage, disk_usage = value
+            elif key == 'date': current_date = value
+            elif key == 'lunar_date': lunar_date = value
+            elif key == 'gold_price': gold_price = value
 
-        # 每1秒更新一次系统使用率
-        if time.time() - system_usage_timer >= 1:
-            cpu_usage, memory_usage, disk_usage = Utils.get_system_usage()
-            system_usage_timer = time.time()
-
-        # 绘制翻页时钟
-        dirty_rects = flip_clock.draw_flip_clock(current_time, current_date, lunar_date, ip_address, hitokoto, cpu_usage, memory_usage, disk_usage, upload_speed, download_speed, cpu_temp)
-
-        # 更新显示，仅更新脏矩形区域
+        # 获取当前时间
+        current_time = Utils.get_time_strings()
+        dirty_rects = flip_clock.draw_flip_clock(current_time, current_date, lunar_date, ip_address, hitokoto, cpu_usage, memory_usage, disk_usage, upload_speed, download_speed, cpu_temp, gold_price)
         pygame.display.update(dirty_rects)
-
-        # 控制帧率
         clock.tick(30)
 
     pygame.quit()
