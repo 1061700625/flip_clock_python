@@ -499,11 +499,14 @@ def fetch_data(data_queue):
 
         # 获取网络速度
         upload_speed, download_speed = Utils.get_network_speed(IP_INTERFACE)
-        data_queue.put(('network_speed', (upload_speed, download_speed)))
+        data_queue.put(('upload_speed', upload_speed))
+        data_queue.put(('download_speed', download_speed))
 
         # 获取系统使用率
         cpu_usage, memory_usage, disk_usage = Utils.get_system_usage()
-        data_queue.put(('system_usage', (cpu_usage, memory_usage, disk_usage)))
+        data_queue.put(('cpu_usage', cpu_usage))
+        data_queue.put(('memory_usage', memory_usage))
+        data_queue.put(('disk_usage', disk_usage))
 
         # 获取CPU温度
         data_queue.put(('cpu_temp', Utils.get_cpu_temp()))
