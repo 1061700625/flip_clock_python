@@ -25,6 +25,7 @@ HITOKOTO_API = 'https://v1.hitokoto.cn/'  # 一言API
 WEATHER_API = 'https://api.vvhan.com/api/weather'  # 天气API
 IMAGE_PATH = 'tkr.jpg'  # 图片路径
 GOLD_PRICE_API = 'https://api.jinjia.com.cn/index.php?m=app&mi=0&cache=1'  # 金价API
+GOLD_PRICE_STORE_API = 'https://api.jinjia.com.cn/index.php?m=app&a=brand&mi=0&cache=1'
 
 # 初始化Pygame
 pygame.init()
@@ -111,20 +112,18 @@ class FlipClock:
 
     def draw_flip_clock(self, data):
         dirty_rects = []
-
-        # 比较并更新数据
         self.update_text(data, 'date', dirty_rects, self.fonts['date'], (self.width // 2, self.height // 4 - 150))
         self.update_text(data, 'lunar_date', dirty_rects, self.fonts['lunar'], (self.width // 2, self.height // 4 - 100))
         self.update_text(data, 'hitokoto', dirty_rects, self.fonts['hitokoto'], (self.width // 2, self.height // 4))
         self.update_flip_time(data, dirty_rects)
         self.update_usage_circles(data, dirty_rects)
         self.update_network_info(data, dirty_rects)
-        self.update_text(data, 'gold_price', dirty_rects, self.fonts['gold'], (self.width // 8, self.height - 100))
-        self.update_text(data, 'weather', dirty_rects, self.fonts['weather'], (self.width-250, 80), wrapped=True, max_width=200, alignment='center')
-
+        self.update_text(data, 'gold_price', dirty_rects, self.fonts['gold'], (30, self.height - 200), alignment='left')
+        self.update_text(data, 'weather', dirty_rects, self.fonts['weather'], (self.width-250, 80), wrapped=True, max_width=200)
         return dirty_rects
 
-    def update_text(self, data, key, dirty_rects, font, position, wrapped=False, max_width=None, alignment='left'):
+
+    def update_text(self, data, key, dirty_rects, font, position, wrapped=False, max_width=None, alignment='center'):
         # 更新文本信息
         if data[key] != self.old_data[key]:
             if self.rects[key]:
@@ -132,7 +131,7 @@ class FlipClock:
             if wrapped:
                 self.rects[key] = self.render_wrapped_text(font, data[key], position, max_width, alignment)
             else:
-                self.rects[key] = self.render_text(font, data[key], position)
+                self.rects[key] = self.render_text(font, data[key], position, alignment)
             dirty_rects.append(self.rects[key])
             self.old_data[key] = data[key]
 
@@ -169,12 +168,29 @@ class FlipClock:
         # 清除矩形区域
         pygame.draw.rect(self.screen, BACKGROUND_COLOR, rect.inflate(10, 10))
 
-    def render_text(self, font, text, position):
-        # 获取渲染的文本，如果不存在则创建并缓存
-        surface, rect = self.get_rendered_text(font, text, (255, 255, 255))
-        rect.center = position
-        self.screen.blit(surface, rect)
-        return rect
+    def render_text(self, font, text, position, alignment='center'):
+        lines = text.split('\n')
+        y_offset = 0
+        max_width = 0
+        rects = []
+        for line in lines:
+            surface, rect = self.get_rendered_text(font, line, (255, 255, 255))
+            
+            if alignment == 'left':
+                rect.topleft = (position[0], position[1] + y_offset)
+            elif alignment == 'center':
+                rect.midtop = (position[0], position[1] + y_offset)
+            elif alignment == 'right':
+                rect.topright = (position[0], position[1] + y_offset)
+            self.screen.blit(surface, rect)
+            y_offset += rect.height
+            max_width = max(max_width, rect.width)
+            rects.append(rect)
+        
+        # Calculate the bounding rect for all lines
+        bounding_rect = pygame.Rect(position[0] - max_width // 2, position[1], max_width, y_offset)
+
+        return bounding_rect
 
     def render_wrapped_text(self, font, text, position, max_width, alignment='left'):
         # 渲染自动换行的文本
@@ -192,19 +208,6 @@ class FlipClock:
                 rect.right = x + max_width // 2
             elif alignment == 'left':
                 rect.left = x - max_width // 2
-            elif alignment == 'justify':
-                words = line.split()
-                if len(words) > 1:
-                    space_width = (max_width - sum(font.get_rect(word).width for word in words)) // (len(words) - 1)
-                    word_x = x - max_width // 2
-                    for word in words:
-                        word_surface, word_rect = font.render(word, (255, 255, 255))
-                        word_rect.topleft = (word_x, y)
-                        self.screen.blit(word_surface, word_rect)
-                        word_x += word_rect.width + space_width
-                    y += font.get_sized_height()
-                    continue
-
             rect.top = y
             self.screen.blit(surface, rect)
             rects.append(rect)
@@ -342,6 +345,37 @@ class FlipClock:
 
 class Utils:
     @staticmethod
+    def gold_price_zh():
+        # 实时金价
+        msg = ''
+        try:
+            resp = requests.get(GOLD_PRICE_API).json()
+            gn = resp['gn'][0]
+            price = gn['price']
+            changepercent = gn['changepercent']
+            msg = f">> 国内金价: {price}元/g({changepercent})"
+        except Exception:
+            pass
+        return msg
+
+    
+    @staticmethod
+    def gold_price_store(num=1):
+        # 实时金价
+        msg = ''
+        try:
+            resp = requests.get(GOLD_PRICE_STORE_API).json()
+            for i in range(num):
+                brand = resp['brand'][i]
+                title = brand['title']
+                gold = brand['gold']
+                msg += f">> {title}: {gold}元/g\n"
+        except Exception:
+            pass
+        return msg.strip()
+    
+    
+    @staticmethod
     def get_time_strings():
         # 获取当前时间
         now = time.localtime()
@@ -417,16 +451,11 @@ class Utils:
     def get_gold_price():
         # 获取实时金价
         try:
-            response = requests.get(GOLD_PRICE_API)
-            if response.status_code == 200:
-                data = response.json()
-                gn = data['gn'][0]
-                price = gn['price']
-                changepercent = gn['changepercent']
-                return f"- 国内金价: {price}元/g ({changepercent})"
-            else:
-                return "<无法获取金价>"
-        except Exception:
+            price_zh = Utils.gold_price_zh()
+            price_store = Utils.gold_price_store(num=4)
+            return price_zh+'\n'+price_store
+        except Exception as e:
+            print(e)
             return "<金价获取失败>"
 
     @staticmethod
